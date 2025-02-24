@@ -6,11 +6,15 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"sync/atomic"
 
+	"github.com/shamxl/coke/waproto"
+	"github.com/shamxl/coke/websocket"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
+	"google.golang.org/protobuf/proto"
 )
 
 type Keypair struct {
@@ -154,4 +158,31 @@ func (nh *NoiseHandler) StartHandshake () {
   }
   nh.key = key
   nh.Authenticate(WA_NOISE_HEADER)
+}
+
+
+func (nh *NoiseHandler) ProcessHandshake (args *websocket.Args) {
+  var err error
+  var handshakeMessage *waproto.HandshakeMessage
+  err = proto.Unmarshal(args.Message, handshakeMessage)
+  if err != nil {
+    panic ("Failed to decode handshake message")
+  }
+  var serverHello *waproto.HandshakeMessage_ServerHello = handshakeMessage.GetServerHello()
+  if serverHello == nil {
+    panic("Handshake failed, Empty response.")
+  }
+
+  // TODO: save these keys in config
+  var serverEphmeralKey []byte = serverHello.GetEphemeral()
+  var serverEncryptedStaticKey []byte = serverHello.GetStatic()
+  var serverEncryptedCertificate []byte = serverHello.GetPayload()
+
+  nh.Authenticate(serverEphmeralKey)
+  nh.MixSharedKey(nh.ClientKeypair.PrivateKey, [32]byte(serverEphmeralKey))
+  var serverDecryptedStaticKey []byte = nh.Decrypt(serverEncryptedStaticKey)
+  nh.MixSharedKey(nh.ClientKeypair.PrivateKey, [32]byte(serverDecryptedStaticKey))
+  // TODO: implement server certificate verifier
+  var s []byte = nh.Decrypt(serverEncryptedCertificate) // Decrypted certificate of the server
+  fmt.Print(s) // :187
 }
