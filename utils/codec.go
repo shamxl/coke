@@ -6,6 +6,7 @@ func (nh *NoiseHandler) encode (data []byte) []byte {
   var frame []byte = make([]byte, headerLength + 3 + dataLength)
   if !nh.sentIntro {
     copy (frame[:headerLength], WA_NOISE_HEADER)
+    nh.sentIntro = true
   }
   frame[headerLength] = byte(dataLength >> 16)
   frame[headerLength + 1] = byte(dataLength >> 8)
