@@ -39,8 +39,8 @@ func SHA256Sum (data []byte) []byte {
 }
 
 func GenerateIV (count uint32) []byte {
-  var iv []byte = make([]byte, 4)
-  binary.BigEndian.PutUint32(iv, count)
+  var iv []byte = make([]byte, 12)
+  binary.LittleEndian.PutUint32(iv[8:], count)
   return iv
 }
 
@@ -76,6 +76,9 @@ type NoiseHandler struct {
   ClientKeypair *Keypair
   ServerKeypair *Keypair
   counter uint32
+
+  // feat/handshake
+  sentIntro bool
 }
 
 
@@ -129,6 +132,8 @@ func (nh *NoiseHandler) Decrypt (ciphertext []byte) []byte {
   plaintext, err = nh.key.Open(nil, GenerateIV(nh.PostIncrementCounter()), ciphertext, nh.hash)
   if err != nil {
     panic (err)
+  } else {
+    nh.Authenticate(ciphertext)
   }
 
   return plaintext
@@ -140,7 +145,7 @@ func (nh *NoiseHandler) Encrypt (plaintext []byte) []byte {
   return ciphertext
 }
 
-func (nh *NoiseHandler) StartHandshake () {
+func (nh *NoiseHandler) StartHandshake (args *websocket.Args) {
   var mode []byte = []byte(NOISE_MODE)
   if len(mode) == 32 {
     nh.hash = mode
@@ -158,13 +163,32 @@ func (nh *NoiseHandler) StartHandshake () {
   }
   nh.key = key
   nh.Authenticate(WA_NOISE_HEADER)
+
+  // feat/handshake
+
+  var keypair *Keypair = NewKeypair()
+  nh.ClientKeypair = keypair
+  nh.Authenticate(keypair.PublicKey[:])
+  var handshakeMessage *waproto.HandshakeMessage = &waproto.HandshakeMessage{
+    ClientHello: &waproto.HandshakeMessage_ClientHello{
+      Ephemeral: keypair.PublicKey[:],
+    },
+  }
+  var marshalledHandshakeMessage []byte
+  marshalledHandshakeMessage, err = proto.Marshal(handshakeMessage)
+  if err != nil {
+    panic (err)
+  }
+  args.Ws.Send(nh.encode(marshalledHandshakeMessage))
+  args.Ws.SetMessage(nh.ProcessHandshake)
 }
 
 
 func (nh *NoiseHandler) ProcessHandshake (args *websocket.Args) {
   var err error
-  var handshakeMessage *waproto.HandshakeMessage
-  err = proto.Unmarshal(args.Message, handshakeMessage)
+  var decodedHandshakeMessage []byte = nh.decode(args.Message)
+  var handshakeMessage waproto.HandshakeMessage
+  err = proto.Unmarshal(decodedHandshakeMessage, &handshakeMessage)
   if err != nil {
     panic ("Failed to decode handshake message")
   }
