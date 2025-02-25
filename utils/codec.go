@@ -1,22 +1,17 @@
 package utils
 
 func (nh *NoiseHandler) encode (data []byte) []byte {
-  var headerLength int
+  var headerLength int = len (WA_NOISE_HEADER)
   var dataLength int = len(data)
-  if nh.sentIntro {
-    headerLength = 0
-  } else {
-    headerLength = len(WA_NOISE_HEADER)
+  var frame []byte = make([]byte, headerLength + 3 + dataLength)
+  if !nh.sentIntro {
+    copy (frame[:headerLength], WA_NOISE_HEADER)
   }
-
-  var encodedData []byte = make([]byte, headerLength + FRAME_LENGTH_HEADER + len(data))
-  encodedData = append(encodedData, WA_NOISE_HEADER...)
-  encodedData[headerLength] = byte(dataLength >> 16)
-  encodedData[headerLength + 1] = byte(dataLength >> 8)
-  encodedData[headerLength + 2] = byte(dataLength)
-  copy (encodedData[headerLength + FRAME_LENGTH_HEADER:], data)
-
-  return encodedData
+  frame[headerLength] = byte(dataLength >> 16)
+  frame[headerLength + 1] = byte(dataLength >> 8)
+  frame[headerLength + 2] = byte(dataLength)
+  copy(frame[headerLength + 3:], data)
+  return frame
 }
 
 func (nh *NoiseHandler) decode (data []byte) []byte {
